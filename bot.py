@@ -1,11 +1,15 @@
 from datetime import datetime
 import logging
 import os
+import threading
 
 from aiogram import Bot, Dispatcher, F, types
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
 from dotenv import load_dotenv
+from flask import Flask
 import requests
 
 
@@ -19,6 +23,7 @@ load_dotenv()
 # Получаем токены
 TG_KEY = os.getenv("TG_KEY")
 API_KEY = os.getenv("API_KEY")
+PORT = int(os.getenv("PORT", 10000))
 
 if not TG_KEY:
     raise ValueError("Не найден TG_KEY в переменных окружения")
@@ -26,8 +31,11 @@ if not API_KEY:
     raise ValueError("Не найден API_KEY в переменных окружения")
 
 # Инициализация бота и диспетчера
-bot = Bot(token=TG_KEY)
+bot = Bot(token=TG_KEY, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
+
+# Инициализация Flask приложения
+app = Flask(__name__)
 
 # Город по умолчанию
 DEFAULT_CITY = "Saint Petersburg"
@@ -52,26 +60,26 @@ def get_weather(city: str) -> str:
         data = response.json()
 
         # Форматируем данные о погоде
-        weather_info = f"🌤 **Погода в {city}**\n\n"
+        weather_info = f"🌤 <b>Погода в {city}</b>\n\n"
         weather_info += (
-            f"• **Состояние:** {data['weather'][0]['description'].capitalize()}\n"
+            f"• <b>Состояние:</b> {data['weather'][0]['description'].capitalize()}\n"
         )
-        weather_info += f"• **Температура:** {data['main']['temp']} °C\n"
-        weather_info += f"• **Ощущается как:** {data['main']['feels_like']} °C\n"
-        weather_info += f"• **Влажность:** {data['main']['humidity']}%\n"
-        weather_info += f"• **Давление:** {data['main']['pressure']} гПа\n"
+        weather_info += f"• <b>Температура:</b> {data['main']['temp']} °C\n"
+        weather_info += f"• <b>Ощущается как:</b> {data['main']['feels_like']} °C\n"
+        weather_info += f"• <b>Влажность:</b> {data['main']['humidity']}%\n"
+        weather_info += f"• <b>Давление:</b> {data['main']['pressure']} гПа\n"
 
         if "grnd_level" in data["main"]:
             weather_info += (
-                f"• **Давление у земли:** {data['main']['grnd_level']} гПа\n"
+                f"• <b>Давление у земли:</b> {data['main']['grnd_level']} гПа\n"
             )
 
-        weather_info += f"• **Скорость ветра:** {data['wind']['speed']} м/с\n"
+        weather_info += f"• <b>Скорость ветра:</b> {data['wind']['speed']} м/с\n"
 
         # Время заката
         sunset_timestamp = data["sys"]["sunset"]
         sunset_time = datetime.fromtimestamp(sunset_timestamp).strftime("%H:%M:%S")
-        weather_info += f"• **Закат:** {sunset_time}\n"
+        weather_info += f"• <b>Закат:</b> {sunset_time}\n"
 
         return weather_info
 
@@ -104,14 +112,14 @@ def get_main_keyboard():
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     welcome_text = (
-        "👋 **Добро пожаловать в Weather Bot!**\n\n"
+        "👋 <b>Добро пожаловать в Weather Bot!</b>\n\n"
         "Я могу показать актуальную погоду в любом городе мира.\n\n"
-        "**Доступные команды:**\n"
+        "<b>Доступные команды:</b>\n"
         "• /start - начать работу\n"
         "• /help - помощь\n"
         "• /weather <город> - погода в указанном городе\n"
         "• /city <город> - установить город по умолчанию\n\n"
-        "**Быстрые кнопки:**\n"
+        "<b>Быстрые кнопки:</b>\n"
         "• Погода в СПб - текущая погода\n"
         "• Сменить город - установить другой город"
     )
@@ -120,25 +128,25 @@ async def cmd_start(message: types.Message):
 
     # Показываем погоду в городе по умолчанию
     weather_info = get_weather(DEFAULT_CITY)
-    await message.answer(weather_info, parse_mode="Markdown")
+    await message.answer(weather_info)
 
 
 # Обработчик команды /help
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
     help_text = (
-        "📖 **Помощь по использованию бота**\n\n"
-        "**Команды:**\n"
+        "📖 <b>Помощь по использованию бота</b>\n\n"
+        "<b>Команды:</b>\n"
         "• /start - начать работу с ботом\n"
         "• /help - показать эту справку\n"
         "• /weather <город> - погода в указанном городе\n"
         "• /city <город> - установить город по умолчанию\n\n"
-        "**Примеры:**\n"
-        "`/weather Moscow` - погода в Москве\n"
-        "`/city London` - установить Лондон городом по умолчанию\n\n"
-        "**Быстрые кнопки** ниже позволяют быстро получить погоду без ввода команд."
+        "<b>Примеры:</b>\n"
+        "<code>/weather Moscow</code> - погода в Москве\n"
+        "<code>/city London</code> - установить Лондон городом по умолчанию\n\n"
+        "<b>Быстрые кнопки</b> ниже позволяют быстро получить погоду без ввода команд."
     )
-    await message.answer(help_text, parse_mode="Markdown")
+    await message.answer(help_text)
 
 
 # Обработчик команды /weather
@@ -149,8 +157,8 @@ async def cmd_weather(message: types.Message):
 
     if len(command_parts) < 2:
         await message.answer(
-            "❌ Укажите город после команды.\n" "**Пример:** `/weather Moscow`",
-            parse_mode="Markdown",
+            "❌ Укажите город после команды.\n"
+            "<b>Пример:</b> <code>/weather Moscow</code>"
         )
         return
 
@@ -158,7 +166,7 @@ async def cmd_weather(message: types.Message):
     await message.answer(f"🔍 Запрашиваю погоду для {city}...")
 
     weather_info = get_weather(city)
-    await message.answer(weather_info, parse_mode="Markdown")
+    await message.answer(weather_info)
 
 
 # Обработчик команды /city
@@ -168,8 +176,8 @@ async def cmd_city(message: types.Message):
 
     if len(command_parts) < 2:
         await message.answer(
-            "❌ Укажите город после команды.\n" "**Пример:** `/city London`",
-            parse_mode="Markdown",
+            "❌ Укажите город после команды.\n"
+            "<b>Пример:</b> <code>/city London</code>"
         )
         return
 
@@ -184,8 +192,7 @@ async def cmd_city(message: types.Message):
         global DEFAULT_CITY
         DEFAULT_CITY = city
         await message.answer(
-            f"✅ Город по умолчанию изменен на: **{city}**\n\n" f"{weather_info}",
-            parse_mode="Markdown",
+            f"✅ Город по умолчанию изменен на: <b>{city}</b>\n\n{weather_info}"
         )
 
 
@@ -194,7 +201,7 @@ async def cmd_city(message: types.Message):
 async def weather_spb(message: types.Message):
     await message.answer("🔍 Запрашиваю погоду в Санкт-Петербурге...")
     weather_info = get_weather("Saint Petersburg")
-    await message.answer(weather_info, parse_mode="Markdown")
+    await message.answer(weather_info)
 
 
 # Обработчик кнопки "Помощь"
@@ -208,10 +215,9 @@ async def help_button(message: types.Message):
 async def change_city_button(message: types.Message):
     await message.answer(
         "🏙 Чтобы установить город по умолчанию, используйте команду:\n"
-        "`/city <название города>`\n\n"
-        "**Пример:** `/city London`\n\n"
-        "Или просто отправьте название города, и я покажу погоду в нем.",
-        parse_mode="Markdown",
+        "<code>/city &lt;название города&gt;</code>\n\n"
+        "<b>Пример:</b> <code>/city London</code>\n\n"
+        "Или просто отправьте название города, и я покажу погоду в нем."
     )
 
 
@@ -228,16 +234,48 @@ async def handle_city_input(message: types.Message):
     if not text.startswith("/"):
         await message.answer(f"🔍 Запрашиваю погоду для {text}...")
         weather_info = get_weather(text)
-        await message.answer(weather_info, parse_mode="Markdown")
+        await message.answer(weather_info)
 
 
-# Запуск бота
-async def main():
+# Flask маршруты для здоровья приложения
+@app.route("/")
+def home():
+    return {
+        "status": "Bot is running",
+        "bot": "@sppersonbot",
+        "service": "Weather Telegram Bot",
+    }
+
+
+@app.route("/health")
+def health():
+    return {"status": "healthy"}
+
+
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    # Если потребуется вебхук в будущем
+    return {"status": "ok"}
+
+
+# Функция для запуска бота в отдельном потоке
+def run_bot():
+    import asyncio
+
+    asyncio.run(start_bot())
+
+
+async def start_bot():
     logger.info("Бот запускается...")
     await dp.start_polling(bot)
 
 
+# Запуск приложения
 if __name__ == "__main__":
-    import asyncio
+    # Запускаем бота в отдельном потоке
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread.start()
 
-    asyncio.run(main())
+    # Запускаем Flask приложение
+    logger.info(f"Запуск Flask приложения на порту {PORT}")
+    app.run(host="0.0.0.0", port=PORT, debug=False)
