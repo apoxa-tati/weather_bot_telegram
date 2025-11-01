@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import logging
 import os
@@ -42,9 +43,7 @@ DEFAULT_CITY = "Saint Petersburg"
 
 
 def get_weather(city: str) -> str:
-    """
-    Получает данные о погоде для указанного города
-    """
+    """Получает данные о погоде для указанного города"""
     try:
         params = {
             "q": city,
@@ -59,7 +58,6 @@ def get_weather(city: str) -> str:
         response.raise_for_status()
         data = response.json()
 
-        # Форматируем данные о погоде
         weather_info = f"🌤 <b>Погода в {city}</b>\n\n"
         weather_info += (
             f"• <b>Состояние:</b> {data['weather'][0]['description'].capitalize()}\n"
@@ -68,12 +66,6 @@ def get_weather(city: str) -> str:
         weather_info += f"• <b>Ощущается как:</b> {data['main']['feels_like']} °C\n"
         weather_info += f"• <b>Влажность:</b> {data['main']['humidity']}%\n"
         weather_info += f"• <b>Давление:</b> {data['main']['pressure']} гПа\n"
-
-        if "grnd_level" in data["main"]:
-            weather_info += (
-                f"• <b>Давление у земли:</b> {data['main']['grnd_level']} гПа\n"
-            )
-
         weather_info += f"• <b>Скорость ветра:</b> {data['wind']['speed']} м/с\n"
 
         # Время заката
@@ -88,12 +80,8 @@ def get_weather(city: str) -> str:
             return f"❌ Город '{city}' не найден. Проверьте правильность написания."
         else:
             return f"❌ Ошибка при получении данных: {e}"
-    except requests.exceptions.RequestException as e:
-        return f"❌ Ошибка соединения: {e}"
-    except KeyError as e:
-        return f"❌ Ошибка в данных от API: отсутствует ключ {e}"
     except Exception as e:
-        return f"❌ Неизвестная ошибка: {e}"
+        return f"❌ Ошибка: {e}"
 
 
 # Создаем клавиатуру
@@ -108,7 +96,7 @@ def get_main_keyboard():
     return keyboard
 
 
-# Обработчик команды /start
+# Обработчики команд
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     welcome_text = (
@@ -123,15 +111,11 @@ async def cmd_start(message: types.Message):
         "• Погода в СПб - текущая погода\n"
         "• Сменить город - установить другой город"
     )
-
     await message.answer(welcome_text, reply_markup=get_main_keyboard())
-
-    # Показываем погоду в городе по умолчанию
     weather_info = get_weather(DEFAULT_CITY)
     await message.answer(weather_info)
 
 
-# Обработчик команды /help
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
     help_text = (
@@ -143,49 +127,35 @@ async def cmd_help(message: types.Message):
         "• /city <город> - установить город по умолчанию\n\n"
         "<b>Примеры:</b>\n"
         "<code>/weather Moscow</code> - погода в Москве\n"
-        "<code>/city London</code> - установить Лондон городом по умолчанию\n\n"
-        "<b>Быстрые кнопки</b> ниже позволяют быстро получить погоду без ввода команд."
+        "<code>/city London</code> - установить Лондон городом по умолчанию"
     )
     await message.answer(help_text)
 
 
-# Обработчик команды /weather
 @dp.message(Command("weather"))
 async def cmd_weather(message: types.Message):
-    # Получаем город из команды (всё после /weather)
     command_parts = message.text.split()
-
     if len(command_parts) < 2:
         await message.answer(
-            "❌ Укажите город после команды.\n"
-            "<b>Пример:</b> <code>/weather Moscow</code>"
+            "❌ Укажите город после команды.\n<b>Пример:</b> <code>/weather Moscow</code>"
         )
         return
-
     city = " ".join(command_parts[1:])
     await message.answer(f"🔍 Запрашиваю погоду для {city}...")
-
     weather_info = get_weather(city)
     await message.answer(weather_info)
 
 
-# Обработчик команды /city
 @dp.message(Command("city"))
 async def cmd_city(message: types.Message):
     command_parts = message.text.split()
-
     if len(command_parts) < 2:
         await message.answer(
-            "❌ Укажите город после команды.\n"
-            "<b>Пример:</b> <code>/city London</code>"
+            "❌ Укажите город после команды.\n<b>Пример:</b> <code>/city London</code>"
         )
         return
-
     city = " ".join(command_parts[1:])
-
-    # Проверяем, что город существует, запрашивая погоду
     weather_info = get_weather(city)
-
     if weather_info.startswith("❌"):
         await message.answer(weather_info)
     else:
@@ -196,7 +166,6 @@ async def cmd_city(message: types.Message):
         )
 
 
-# Обработчик кнопки "Погода в СПб"
 @dp.message(F.text == "🌤 Погода в СПб")
 async def weather_spb(message: types.Message):
     await message.answer("🔍 Запрашиваю погоду в Санкт-Петербурге...")
@@ -204,47 +173,35 @@ async def weather_spb(message: types.Message):
     await message.answer(weather_info)
 
 
-# Обработчик кнопки "Помощь"
 @dp.message(F.text == "❓ Помощь")
 async def help_button(message: types.Message):
     await cmd_help(message)
 
 
-# Обработчик кнопки "Сменить город"
 @dp.message(F.text == "🏙 Сменить город")
 async def change_city_button(message: types.Message):
     await message.answer(
-        "🏙 Чтобы установить город по умолчанию, используйте команду:\n"
-        "<code>/city &lt;название города&gt;</code>\n\n"
-        "<b>Пример:</b> <code>/city London</code>\n\n"
-        "Или просто отправьте название города, и я покажу погоду в нем."
+        "🏙 Чтобы установить город по умолчанию, используйте команду:\n<code>/city &lt;город&gt;</code>"
     )
 
 
-# Обработчик текстовых сообщений (для произвольных городов)
 @dp.message(F.text)
 async def handle_city_input(message: types.Message):
     text = message.text.strip()
-
-    # Игнорируем команды и кнопки, которые уже обработаны
-    if text in ["🌤 Погода в СПб", "❓ Помощь", "🏙 Сменить город"]:
-        return
-
-    # Если текст не похож на команду, считаем его названием города
-    if not text.startswith("/"):
+    if text not in [
+        "🌤 Погода в СПб",
+        "❓ Помощь",
+        "🏙 Сменить город",
+    ] and not text.startswith("/"):
         await message.answer(f"🔍 Запрашиваю погоду для {text}...")
         weather_info = get_weather(text)
         await message.answer(weather_info)
 
 
-# Flask маршруты для здоровья приложения
+# Flask маршруты
 @app.route("/")
 def home():
-    return {
-        "status": "Bot is running",
-        "bot": "@sppersonbot",
-        "service": "Weather Telegram Bot",
-    }
+    return {"status": "Bot is running", "service": "Weather Telegram Bot"}
 
 
 @app.route("/health")
@@ -252,30 +209,37 @@ def health():
     return {"status": "healthy"}
 
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    # Если потребуется вебхук в будущем
-    return {"status": "ok"}
-
-
-# Функция для запуска бота в отдельном потоке
-def run_bot():
-    import asyncio
-
-    asyncio.run(start_bot())
-
-
 async def start_bot():
-    logger.info("Бот запускается...")
-    await dp.start_polling(bot)
+    """Запуск Telegram бота"""
+    logger.info("Запуск Telegram бота...")
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.error(f"Ошибка при запуске бота: {e}")
 
 
-# Запуск приложения
+def run_bot_in_thread():
+    """Запуск бота в отдельном потоке"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(start_bot())
+    except Exception as e:
+        logger.error(f"Ошибка в потоке бота: {e}")
+    finally:
+        loop.close()
+
+
+def run_flask():
+    """Запуск Flask приложения"""
+    logger.info(f"Запуск Flask на порту {PORT}")
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+
+
 if __name__ == "__main__":
     # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
+    bot_thread = threading.Thread(target=run_bot_in_thread, daemon=True)
     bot_thread.start()
 
-    # Запускаем Flask приложение
-    logger.info(f"Запуск Flask приложения на порту {PORT}")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    # Запускаем Flask в основном потоке (это обязательно для Render)
+    run_flask()
