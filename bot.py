@@ -2,7 +2,6 @@ import asyncio
 from datetime import datetime
 import logging
 import os
-import threading
 
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.client.default import DefaultBotProperties
@@ -209,37 +208,44 @@ def health():
     return {"status": "healthy"}
 
 
+@app.route("/ping")
+def ping():
+    return "pong"
+
+
 async def start_bot():
     """Запуск Telegram бота"""
     logger.info("Запуск Telegram бота...")
     try:
-        await dp.start_polling(bot)
+        await dp.start_polling(bot, skip_updates=True)
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")
 
 
-def run_bot_in_thread():
-    """Запуск бота в отдельном потоке"""
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(start_bot())
-    except Exception as e:
-        logger.error(f"Ошибка в потоке бота: {e}")
-    finally:
-        loop.close()
-
-
-def run_flask():
-    """Запуск Flask приложения"""
-    logger.info(f"Запуск Flask на порту {PORT}")
-    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
+def run_bot():
+    """Запуск бота в основном event loop"""
+    asyncio.run(start_bot())
 
 
 if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot_in_thread, daemon=True)
-    bot_thread.start()
+    # ЗАПУСКАЕМ БОТА В ОСНОВНОМ ПОТОКЕ, а Flask в отдельном
+    from threading import Thread
+    import time
 
-    # Запускаем Flask в основном потоке (это обязательно для Render)
-    run_flask()
+    # Даем время на запуск
+    time.sleep(2)
+
+    # Запускаем Flask в отдельном потоке как демона
+    flask_thread = Thread(
+        target=lambda: app.run(
+            host="0.0.0.0", port=PORT, debug=False, use_reloader=False
+        )
+    )
+    flask_thread.daemon = True
+    flask_thread.start()
+
+    logger.info(f"Flask запущен на порту {PORT} в фоновом режиме")
+    logger.info("Запускаем Telegram бота в основном потоке...")
+
+    # Запускаем бота в основном потоке
+    run_bot()
